@@ -1,31 +1,47 @@
-import axios from 'axios'
+import { NextResponse } from "next/server"
+import axios from "axios"
 
 export async function POST(req) {
   try {
-    const { prompt, model } = await req.json()
-    // حاليًا ندعم OpenAI فقط. لاحقًا يمكن التفرعة إلى Gemini أو Claude.
-    if (!process.env.OPENAI_API_KEY) {
-      return new Response(JSON.stringify({ error: 'OPENAI_API_KEY not configured on server.' }), { status: 500 })
+    const { message, model } = await req.json()
+
+    if (model === "gemini") {
+      const geminiRes = await axios.post(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent",
+        {
+          contents: [{ parts: [{ text: message }] }],
+        },
+        {
+          headers: { "Content-Type": "application/json" },
+          params: { key: process.env.GEMINI_API_KEY },
+        }
+      )
+      const reply =
+        geminiRes.data?.candidates?.[0]?.content?.parts?.[0]?.text ||
+        "⚠️ لم يأت رد من Gemini"
+      return NextResponse.json({ reply })
     }
 
-    if (model === 'openai') {
-      const payload = {
-        model: 'gpt-4o-mini',
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 800,
+    const openaiRes = await axios.post(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: message }],
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
       }
-      const res = await axios.post('https://api.openai.com/v1/chat/completions', payload, {
-        headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' }
-      })
-      const reply = res.data.choices?.[0]?.message?.content || ''
-      return new Response(JSON.stringify({ reply }), { status: 200 })
-    }
-
-    // Placeholder response for other models
-    return new Response(JSON.stringify({ reply: 'هذا نموذج وهمي حالياً — إضافة Gemini/Claude لاحقاً.' }), { status: 200 })
-
-  } catch (err) {
-    console.error(err?.response?.data || err.message)
-    return new Response(JSON.stringify({ error: err?.message || 'Unknown error' }), { status: 500 })
+    )
+    const reply = openaiRes.data.choices[0].message.content
+    return NextResponse.json({ reply })
+  } catch (error) {
+    console.error(error.response?.data || error.message)
+    return NextResponse.json(
+      { reply: "⚠️ خطأ أثناء الاتصال بالنموذج" },
+      { status: 500 }
+    )
   }
 }
